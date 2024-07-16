@@ -10,6 +10,7 @@ class Server
 
     const string ROOT_ROUTE = @"^/$";
     const string ECHO_ROUTE = @"/echo/([^/]+)";
+    const string FILES_ROUTE = @"/files/([^/]+)";
     const string USER_AGENT_ROUTE = @"^/user-agent$";
 
     private static readonly string OK = "HTTP/1.1 200 OK\r\n\r\n";
@@ -18,14 +19,16 @@ class Server
     private static readonly string REQUEST_HEADER_PATTERN = @"^([\w-]+):\s*(.+)$";
 
 
-    private static readonly string[] serverRoutes = [ROOT_ROUTE, ECHO_ROUTE, USER_AGENT_ROUTE];
+    private static readonly string[] serverRoutes = [ROOT_ROUTE, ECHO_ROUTE, FILES_ROUTE, USER_AGENT_ROUTE];
 
     private static readonly IPAddress localIpAddress = IPAddress.Parse(LOCALHOST_ADDRESS);
     private static readonly byte[] buffer = new byte[1024];
-    
+
     private static string OkBodyResponse(string body) => $"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {body.Length}\r\n\r\n{body}";
 
-    public static Task Main()
+    private static string OkFileBodyResponse(string fileContent) => $"HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {fileContent.Length}\r\n\r\n{fileContent}";
+
+    public static Task Main(string[] args)
     {
         TcpListener server = new(localIpAddress, PORT);
         server.Start();
@@ -70,6 +73,13 @@ class Server
             case ECHO_ROUTE:
                 var pathParameters = ExtractPathParametersFromUrl(requestPath, ECHO_ROUTE);
                 return HandleEchoRoute(stream, pathParameters[1]);
+            case FILES_ROUTE:
+                var argv = Environment.GetCommandLineArgs();
+                var filesDirectory = argv[2];
+                var pathParams = ExtractPathParametersFromUrl(requestPath, FILES_ROUTE);
+                string filePath = $"{filesDirectory}/{pathParams[1]}";
+                Console.WriteLine(filePath);
+                return HandleFilesRoute(stream, filePath);
             case USER_AGENT_ROUTE:
                 return HandleUserAgentRoute(stream, requestHeaders["User-Agent"]);
             default:
@@ -94,6 +104,18 @@ class Server
     private static Task HandleEchoRoute(NetworkStream stream, string body)
     {
         stream.Write(Encoding.ASCII.GetBytes(OkBodyResponse(body)));
+        stream.Close();
+        return Task.CompletedTask;
+    }
+
+    private static Task HandleFilesRoute(NetworkStream stream, string filePath)
+    {
+        if (File.Exists(filePath) == false)
+        {
+            HandleNotFoundRoute(stream);
+        }
+        string fileContent = File.ReadAllText(filePath);
+        stream.Write(Encoding.ASCII.GetBytes(OkFileBodyResponse(fileContent)));
         stream.Close();
         return Task.CompletedTask;
     }
