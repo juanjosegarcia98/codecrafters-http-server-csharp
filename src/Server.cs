@@ -14,8 +14,10 @@ class Server
     const string USER_AGENT_ROUTE = @"^/user-agent$";
 
     private static readonly string OK = "HTTP/1.1 200 OK\r\n\r\n";
+    private static readonly string CREATED = "HTTP/1.1 201 Created\r\n\r\n";
     private static readonly string NOT_FOUND = "HTTP/1.1 404 Not Found\r\n\r\n";
 
+    private static readonly string HTTP_METHOD_PATTERN = @"^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|TRACE|CONNECT)\s";
     private static readonly string REQUEST_HEADER_PATTERN = @"^([\w-]+):\s*(.+)$";
 
 
@@ -60,9 +62,9 @@ class Server
         int bytesReceived = stream.Read(buffer);
         string request = Encoding.ASCII.GetString(buffer, 0, bytesReceived);
 
-        Dictionary<string, string> requestHeaders = ExtractHeadersFromRequest(request);
-
         string requestPath = ExtractUrlPathFromRequest(request);
+
+        Dictionary<string, string> requestHeaders = ExtractHeadersFromRequest(request);
 
         string? routeMatched = serverRoutes.Where(route => Regex.Match(requestPath, route).Success).FirstOrDefault(defaultValue: null);
 
@@ -78,7 +80,11 @@ class Server
                 var filesDirectory = argv[2];
                 var pathParams = ExtractPathParametersFromUrl(requestPath, FILES_ROUTE);
                 string filePath = $"{filesDirectory}/{pathParams[1]}";
-                Console.WriteLine(filePath);
+                if (ExtractMethodFromRequest(request) == "POST")
+                {
+                    string body = request.Split('\n').Last();
+                    return HandleFilesPostRoute(stream, filePath, body);
+                }
                 return HandleFilesRoute(stream, filePath);
             case USER_AGENT_ROUTE:
                 return HandleUserAgentRoute(stream, requestHeaders["User-Agent"]);
@@ -116,6 +122,14 @@ class Server
         }
         string fileContent = File.ReadAllText(filePath);
         stream.Write(Encoding.ASCII.GetBytes(OkFileBodyResponse(fileContent)));
+        stream.Close();
+        return Task.CompletedTask;
+    }
+
+    private static Task HandleFilesPostRoute(NetworkStream stream, string filePath, string content)
+    {
+        File.WriteAllText(filePath, content);
+        stream.Write(Encoding.ASCII.GetBytes(CREATED));
         stream.Close();
         return Task.CompletedTask;
     }
@@ -166,5 +180,13 @@ class Server
         }
 
         return headers;
+    }
+
+    private static string? ExtractMethodFromRequest(string request)
+    {
+        Match requestMethodMatch = Regex.Match(request, HTTP_METHOD_PATTERN);
+
+        if (requestMethodMatch.Success == false) return null;
+        return requestMethodMatch.Groups[1].Value;
     }
 }
