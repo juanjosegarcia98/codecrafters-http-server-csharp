@@ -23,10 +23,19 @@ class Server
 
     private static readonly string[] serverRoutes = [ROOT_ROUTE, ECHO_ROUTE, FILES_ROUTE, USER_AGENT_ROUTE];
 
+    private static readonly string[] availableCompressionSchemes = [
+        "gzip",
+        "deflate",
+        "br",
+        "zstd",
+        "compress",
+    ];
+
     private static readonly IPAddress localIpAddress = IPAddress.Parse(LOCALHOST_ADDRESS);
     private static readonly byte[] buffer = new byte[1024];
 
     private static string OkBodyResponse(string body) => $"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {body.Length}\r\n\r\n{body}";
+    private static string OkCompressedBodyResponse(string body, string contentEncoding) => $"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Encoding: {contentEncoding}\r\nContent-Length: {body.Length}\r\n\r\n{body}";
 
     private static string OkFileBodyResponse(string fileContent) => $"HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {fileContent.Length}\r\n\r\n{fileContent}";
 
@@ -74,6 +83,12 @@ class Server
                 return HandleRootRoute(stream);
             case ECHO_ROUTE:
                 var pathParameters = ExtractPathParametersFromUrl(requestPath, ECHO_ROUTE);
+                
+                if (requestHeaders.GetValueOrDefault("Accept-Encoding", defaultValue: null) != null && availableCompressionSchemes.Contains(requestHeaders["Accept-Encoding"]))
+                {
+                    return HandleCompressedEchoRoute(stream, pathParameters[1], requestHeaders["Accept-Encoding"]);
+                }
+                
                 return HandleEchoRoute(stream, pathParameters[1]);
             case FILES_ROUTE:
                 var argv = Environment.GetCommandLineArgs();
@@ -110,6 +125,13 @@ class Server
     private static Task HandleEchoRoute(NetworkStream stream, string body)
     {
         stream.Write(Encoding.ASCII.GetBytes(OkBodyResponse(body)));
+        stream.Close();
+        return Task.CompletedTask;
+    }
+
+    private static Task HandleCompressedEchoRoute(NetworkStream stream, string body, string contentEncoding)
+    {
+        stream.Write(Encoding.ASCII.GetBytes(OkCompressedBodyResponse(body, contentEncoding)));
         stream.Close();
         return Task.CompletedTask;
     }
