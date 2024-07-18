@@ -83,13 +83,27 @@ class Server
                 return HandleRootRoute(stream);
             case ECHO_ROUTE:
                 var pathParameters = ExtractPathParametersFromUrl(requestPath, ECHO_ROUTE);
-                
-                if (requestHeaders.GetValueOrDefault("Accept-Encoding", defaultValue: null) != null && availableCompressionSchemes.Contains(requestHeaders["Accept-Encoding"]))
+                if (requestHeaders.GetValueOrDefault("Accept-Encoding", defaultValue: null) == null)
                 {
-                    return HandleCompressedEchoRoute(stream, pathParameters[1], requestHeaders["Accept-Encoding"]);
+                    return HandleEchoRoute(stream, pathParameters[1]);
                 }
-                
-                return HandleEchoRoute(stream, pathParameters[1]);
+                string contentEncoding = requestHeaders["Accept-Encoding"];
+                if (contentEncoding.Contains(',') == false && availableCompressionSchemes.Contains(requestHeaders["Accept-Encoding"]) == false)
+                {
+                    return HandleEchoRoute(stream, pathParameters[1]);
+                }
+                if (contentEncoding.Contains(','))
+                {
+                    List<string> validEncodings = [];
+                    foreach (var item in contentEncoding.Split(','))
+                    {
+                        string itemName = item.Trim();
+                        if (availableCompressionSchemes.Contains(itemName)) validEncodings.Add(itemName);
+                    }
+                    contentEncoding = string.Join(", ", validEncodings);
+                }
+                return HandleCompressedEchoRoute(stream, pathParameters[1], contentEncoding);
+
             case FILES_ROUTE:
                 var argv = Environment.GetCommandLineArgs();
                 var filesDirectory = argv[2];
